@@ -1,0 +1,12 @@
+[package]
+name = "sbs_view"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+crc = "3.2.1"
+regex = "1.10.6"
+sbs_core = { path = "../sbs_core" }
+sbs_uart = { path = "../sbs_uart" }
+serialport = "4.4.0"
+tokio = {  version="1.39.2", features=["full"] }

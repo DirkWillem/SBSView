@@ -1,0 +1,7 @@
+[workspace]
+resolver = "2"
+
+members = [ "sbs_core",
+    "sbs_uart",
+    "sbs_view"
+]
