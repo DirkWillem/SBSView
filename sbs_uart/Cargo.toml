@@ -6,7 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+async-trait = "0.1.81"
 crc = "3.2.1"
+pollster = "0.3.0"
 sbs_core = { path = "../sbs_core" }
 serialport = "4.5.0"
 tokio = "1.39.2"

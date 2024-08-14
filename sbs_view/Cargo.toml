@@ -5,6 +5,9 @@ edition = "2021"
 
 [dependencies]
 crc = "3.2.1"
+eframe = "0.28.1"
+egui_plot = "0.28.1"
+pollster = "0.3.0"
 regex = "1.10.6"
 sbs_core = { path = "../sbs_core" }
 sbs_uart = { path = "../sbs_uart" }

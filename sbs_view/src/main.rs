@@ -1,32 +1,53 @@
-use std::fmt::{Display};
-use std::time::Duration;
+mod view;
+mod views;
+
+use eframe::egui;
+use eframe::egui::{Align, Layout, Style, Visuals};
 use sbs_core::sbs::{Client};
-use sbs_uart::sbs_uart::SbsUart;
+use crate::view::{ChildView, State, UpdateTopLevelView, View};
+use crate::views::connect_view::ConnectView;
+use crate::views::main_view::MainView;
 
 
 #[tokio::main]
 async fn main() {
-    let mut client = SbsUart::new();
-    client.connect("/dev/tty.usbmodem21103", 115_200).await.unwrap();
+    let mut native_options = eframe::NativeOptions::default();
+    eframe::run_native(
+        "My egui App",
+        native_options,
+        Box::new(|cc| {
+            let style = Style {
+                visuals: Visuals::dark(),
+                ..Style::default()
+            };
+            cc.egui_ctx.set_style(style);
+            Ok(Box::new(MyEguiApp::new(cc)))
+        }),
+    )
+        .unwrap();
+}
 
-    let frames = client.get_frames().await.unwrap();
+struct MyEguiApp {
+    main_view: MainView,
+}
 
+impl MyEguiApp {
+    fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        let mut result = MyEguiApp {
+            main_view: MainView::new(),
+        };
 
-    for frame in &frames {
-        client.enable_frame(frame.id).await.unwrap();
+        result
     }
+}
 
-    tokio::time::sleep(Duration::from_millis(1000)).await;
-
-    for frame in &frames {
-        for i in 0..3 {
-            match client.disable_frame(frame.id).await {
-                Ok(_) => break,
-                Err(e) => println!("error {e:?}, try {i}"),
-            }
-        }
+impl eframe::App for MyEguiApp {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        self.main_view.update(ctx, frame);
+        // egui::CentralPanel::default().show(ctx, |ui| {
+        //     ui.with_layout(Layout::top_down(Align::Center).with_cross_align(Align::LEFT).with_main_align(Align::Center).with_main_justify(false).with_cross_justify(false), |ui| {
+        //         self.methods_view.render(ui);
+        //     });
+        // });
     }
-
-    client.close().await.unwrap();
-
 }

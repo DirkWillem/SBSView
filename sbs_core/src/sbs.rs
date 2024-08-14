@@ -1,4 +1,5 @@
-use std::future::Future;
+use std::fmt::Debug;
+use async_trait::async_trait;
 use crate::ty::Type;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -19,12 +20,11 @@ pub struct SignalDescriptor {
     pub ty: Type,
 }
 
+#[async_trait]
 pub trait Client {
-    type Error;
+    async fn get_frames(&mut self) -> Result<Vec<SignalFrameDescriptor>, String>;
 
-    fn get_frames(&mut self) -> impl Future<Output=Result<Vec<SignalFrameDescriptor>, Self::Error>> + Send;
-
-    fn enable_frame(&mut self, frame_id: FrameId) -> impl Future<Output=Result<(), Self::Error>> + Send;
-    fn disable_frame(&mut self, frame_id: FrameId) -> impl Future<Output=Result<(), Self::Error>> + Send;
+    async fn enable_frame(&mut self, frame_id: FrameId) -> Result<(), String>;
+    async fn disable_frame(&mut self, frame_id: FrameId) -> Result<(), String>;
 }
 

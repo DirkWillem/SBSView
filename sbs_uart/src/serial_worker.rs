@@ -5,6 +5,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::mpsc::error::{SendError, TryRecvError};
 use tokio;
 use std::time::Duration;
+use pollster::FutureExt;
 use serialport::{ClearBuffer, SerialPort};
 use tokio::time::error::Elapsed;
 use tokio::time::timeout;
@@ -12,6 +13,7 @@ use crate::error::Error;
 use crate::frame_decoder::{DecodedFrame, Decoder, DecodeResult, FrameDetails, FrameInfo, RawSignalFrame};
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 enum CommandReq {
     Connect(String, u32),
     Disconnect,
@@ -31,6 +33,7 @@ impl<T> From<SendError<T>> for Error {
 
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 enum CommandRes {
     Connect(Result<(), Error>),
     Disconnect(Result<(), Error>),
@@ -45,6 +48,12 @@ pub struct SerialWorker {
     txchan_tx: Sender<CommandReq>,
     rxchan_rx: Receiver<CommandRes>,
     reader_thread: thread::JoinHandle<()>,
+}
+
+impl Drop for SerialWorker {
+    fn drop(&mut self) {
+        let _ = self.txchan_tx.send(CommandReq::Stop).block_on();
+    }
 }
 
 impl SerialWorker {
@@ -101,14 +110,6 @@ impl SerialWorker {
             CommandRes::Error(e) => Err(e),
             res => Err(Error::Internal(format!("Invalid response from worker {res:?}")))
         }
-    }
-
-    pub async fn quit(self) -> Result<(), Error> {
-        self.txchan_tx.send(CommandReq::Stop).await?;
-
-        self.reader_thread.join().unwrap();
-
-        Ok(())
     }
 
     async fn request(&mut self, req: CommandReq, to: Duration) -> Result<CommandRes, Error> {
@@ -294,8 +295,9 @@ impl SerialWorkerThread {
         let ser = self.serial.as_mut().unwrap();
         match ser.read(serial_buf.as_mut_slice()) {
             Ok(nb) => {
+                self.decoder.add_data(&serial_buf.as_slice()[..nb]);
                 loop {
-                    match self.decoder.decode(&serial_buf.as_slice()[..nb]) {
+                    match self.decoder.decode() {
                         DecodeResult::None => break,
                         DecodeResult::CmdFrame(frame) =>
                             self.send_response(CommandRes::GetFrameInfo(Err(Error::WrongFrame(format!("Unexpected frame {frame:?}"))))),
@@ -359,18 +361,21 @@ impl SerialWorkerThread {
         let ser = self.serial.as_mut().unwrap();
 
         match ser.read(serial_buf.as_mut_slice()) {
-            Ok(nb) => loop {
-                match self.decoder.decode(&serial_buf.as_slice()[..nb]) {
-                    DecodeResult::None => return None,
-                    DecodeResult::CmdFrame(frame) => {
-                        self.send_response(map_frame(frame));
-                        return Some(WorkerState::Connected);
+            Ok(nb) => {
+                self.decoder.add_data(&serial_buf.as_slice()[..nb]);
+                loop {
+                    match self.decoder.decode() {
+                        DecodeResult::None => return None,
+                        DecodeResult::CmdFrame(frame) => {
+                            self.send_response(map_frame(frame));
+                            return Some(WorkerState::Connected);
+                        }
+                        DecodeResult::Err(err) => {
+                            self.send_response(CommandRes::Error(Error::DecodeError(err)));
+                            return Some(WorkerState::Connected);
+                        }
+                        DecodeResult::SignalFrame(rsf) => self.send_signal_frame(rsf),
                     }
-                    DecodeResult::Err(err) => {
-                        self.send_response(CommandRes::Error(Error::DecodeError(err)));
-                        return Some(WorkerState::Connected);
-                    }
-                    DecodeResult::SignalFrame(rsf) => self.send_signal_frame(rsf),
                 }
             }
             Err(err) if err.kind() == ErrorKind::TimedOut => None,
@@ -395,7 +400,7 @@ impl SerialWorkerThread {
 }
 
 impl From<Elapsed> for Error {
-    fn from(value: Elapsed) -> Self {
+    fn from(_: Elapsed) -> Self {
         Error::Timeout
     }
 }

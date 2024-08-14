@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use async_trait::async_trait;
 use tokio::sync::{mpsc, RwLock};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
@@ -17,26 +18,29 @@ struct FrameState {
 pub struct SbsUart {
     serial_worker: SerialWorker,
     frame_descriptors: Arc<RwLock<Option<HashMap<FrameId, FrameState>>>>,
+    #[allow(dead_code)]
     frame_reader_thread: JoinHandle<()>,
 }
 
 
+#[async_trait]
 impl Client for SbsUart {
-    type Error = Error;
-
-    async fn get_frames(&mut self) -> Result<Vec<SignalFrameDescriptor>, Error> {
+    async fn get_frames(&mut self) -> Result<Vec<SignalFrameDescriptor>, String> {
         self.ensure_frame_descriptors_loaded().await?;
 
-        Ok(self.frame_descriptors.read().await.as_ref().unwrap()
+        let mut frames = self.frame_descriptors.read().await.as_ref().unwrap()
             .values()
-            .map(|fs| fs.descriptor.clone()).collect::<Vec<_>>())
+            .map(|fs| fs.descriptor.clone()).collect::<Vec<_>>();
+        frames.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+
+        Ok(frames)
     }
 
-    async fn enable_frame(&mut self, frame_id: FrameId) -> Result<(), Error> {
+    async fn enable_frame(&mut self, frame_id: FrameId) -> Result<(), String> {
         self.serial_worker.enable_frame(frame_id.0).await?;
 
         if let Some(ref mut descriptors) = &mut *self.frame_descriptors.write().await {
-            if let Some(mut entry) = descriptors.get_mut(&frame_id) {
+            if let Some(entry) = descriptors.get_mut(&frame_id) {
                 entry.descriptor.enabled = true;
             }
         }
@@ -44,11 +48,11 @@ impl Client for SbsUart {
         Ok(())
     }
 
-    async fn disable_frame(&mut self, frame_id: FrameId) -> Result<(), Error> {
+    async fn disable_frame(&mut self, frame_id: FrameId) -> Result<(), String> {
         self.serial_worker.disable_frame(frame_id.0).await?;
 
         if let Some(ref mut descriptors) = &mut *self.frame_descriptors.write().await {
-            if let Some(mut entry) = descriptors.get_mut(&frame_id) {
+            if let Some(entry) = descriptors.get_mut(&frame_id) {
                 entry.descriptor.enabled = false;
             }
         }
@@ -73,7 +77,7 @@ impl SbsUart {
 
                     let mut descriptors_opt = descriptors_rwl.write().await;
                     if let Some(ref mut descriptors) = &mut *descriptors_opt {
-                        if let Some(mut frame_state) = descriptors.get_mut(&frame_id) {
+                        if let Some(frame_state) = descriptors.get_mut(&frame_id) {
                             frame_state.latest_value.update_from_bytes(frame.data.as_slice());
                             println!("{}", frame_state.latest_value);
                         }
@@ -85,10 +89,6 @@ impl SbsUart {
 
     pub async fn connect(&mut self, port: &str, baud: u32) -> Result<(), Error> {
         self.serial_worker.connect(port, baud).await
-    }
-
-    pub async fn close(self) -> Result<(), Error> {
-        self.serial_worker.quit().await
     }
 
     async fn ensure_frame_descriptors_loaded(&mut self) -> Result<(), Error> {
@@ -108,19 +108,14 @@ impl SbsUart {
                 }).collect::<Vec<_>>(),
             };
 
-            let initial_value = SignalFrameValue::new(descriptor.clone());
-
             result.insert(FrameId(frame.id), FrameState {
-                descriptor,
-                latest_value: initial_value,
+                descriptor: descriptor.clone(),
+                latest_value: SignalFrameValue::new(descriptor.clone()),
             });
         }
 
-        {
-            let mut descriptors = self.frame_descriptors.write().await;
-            *descriptors = Some(result);
-        }
-
+        let mut descriptors = self.frame_descriptors.write().await;
+        *descriptors = Some(result);
         Ok(())
     }
 }

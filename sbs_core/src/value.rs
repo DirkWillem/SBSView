@@ -1,5 +1,4 @@
 use std::fmt::{Display, Formatter};
-use std::path::Path;
 use crate::decode::BinaryReader;
 use crate::sbs::SignalFrameDescriptor;
 use crate::ty::Type;

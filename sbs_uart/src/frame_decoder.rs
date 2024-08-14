@@ -152,10 +152,12 @@ impl Decoder {
         }
     }
 
-    pub fn decode(&mut self, data: &[u8]) -> DecodeResult {
+    pub fn add_data(&mut self, data: &[u8]) {
         self.buffer.extend(data.iter().copied());
         self.buffer.make_contiguous();
+    }
 
+    pub fn decode(&mut self) -> DecodeResult {
         let mut result = DecodeResult::None;
 
         loop {
