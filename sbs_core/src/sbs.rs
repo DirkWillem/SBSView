@@ -5,6 +5,8 @@ use crate::ty::Type;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FrameId(pub u32);
 
+pub type SignalId = (FrameId, String);
+
 
 #[derive(Clone, Debug)]
 pub struct SignalFrameDescriptor {

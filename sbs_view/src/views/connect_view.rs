@@ -1,7 +1,7 @@
 use std::collections::LinkedList;
 use std::fmt::{Display, Formatter};
 use eframe::egui;
-use eframe::egui::{Align, Layout, Ui};
+use eframe::egui::{Align, CollapsingHeader, InnerResponse, Layout, Ui};
 use regex::Regex;
 use crate::view::{State, View};
 use crate::views::main_view::MainViewAction;
@@ -95,9 +95,8 @@ impl View<ConnectViewState, ConnectViewAction, MainViewAction> for ConnectView {
         &mut self.state
     }
 
-    fn view(&mut self, ui: &mut Ui) -> LinkedList<ConnectViewAction> {
+    fn view(&mut self, ui: &mut Ui) -> InnerResponse<LinkedList<ConnectViewAction>> {
         let mut result = LinkedList::<ConnectViewAction>::default();
-
         ui.group(|ui| {
             ui.heading("Connect");
 
@@ -109,7 +108,7 @@ impl View<ConnectViewState, ConnectViewAction, MainViewAction> for ConnectView {
                         .unwrap_or("No port selected".to_string()))
                     .show_ui(ui, |ui| {
                         for port in &self.state.available_ports {
-                            ui.selectable_value(&mut self.state.selected_port, Some(port.clone()), port.to_string());
+                            ui.selectable_value(&mut self.state.selected_port, Some(port.clone()), format!("🔌 {}", port.to_string()));
                         }
                     });
 
@@ -124,10 +123,9 @@ impl View<ConnectViewState, ConnectViewAction, MainViewAction> for ConnectView {
             ).clicked() {
                 result.push_back(ConnectViewAction::Connect(self.state.selected_port.clone().unwrap()));
             }
-        });
 
-
-        result
+            result
+        })
     }
 
     fn action_to_parent_action(&self, action: &ConnectViewAction) -> Option<MainViewAction> {
