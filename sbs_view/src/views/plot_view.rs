@@ -1,10 +1,10 @@
-use std::collections::LinkedList;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
-use eframe::egui;
-use eframe::egui::{CollapsingHeader, DragValue, InnerResponse, Ui};
-use egui_plot::Plot;
 use crate::view::{State, View};
+use eframe::egui;
+use eframe::egui::{DragValue, InnerResponse, Ui};
+use egui_plot::Plot;
+use std::collections::LinkedList;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 
 pub enum PlotViewAction {
     ToggleSettings,
@@ -85,7 +85,7 @@ impl View<PlotViewState, PlotViewAction, PlotViewParentAction> for PlotView {
                 });
             }
 
-            plot.show(ui, |plot_ui| {});
+            plot.show(ui, |_plot_ui| {});
 
             result
         })

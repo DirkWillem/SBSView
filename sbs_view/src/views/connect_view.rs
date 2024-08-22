@@ -1,10 +1,10 @@
-use std::collections::LinkedList;
-use std::fmt::{Display, Formatter};
-use eframe::egui;
-use eframe::egui::{Align, CollapsingHeader, InnerResponse, Layout, Ui};
-use regex::Regex;
 use crate::view::{State, View};
 use crate::views::main_view::MainViewAction;
+use eframe::egui;
+use eframe::egui::{Align, InnerResponse, Ui};
+use regex::Regex;
+use std::collections::LinkedList;
+use std::fmt::{Display, Formatter};
 
 #[derive(Clone, Debug)]
 pub enum ConnectViewAction {

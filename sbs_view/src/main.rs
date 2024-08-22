@@ -1,12 +1,11 @@
 mod view;
 mod views;
 
-use eframe::egui;
-use eframe::egui::{Align, Layout, Style, Visuals};
-use sbs_core::sbs::{Client};
 use crate::view::{ChildView, State, UpdateTopLevelView, View};
-use crate::views::connect_view::ConnectView;
 use crate::views::main_view::MainView;
+use eframe::egui;
+use eframe::egui::{Style, Visuals};
+use sbs_core::sbs::Client;
 
 
 #[tokio::main]

@@ -4,9 +4,9 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
 use eframe::egui::{Response, Ui};
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::Mutex;
 
-use sbs_core::sbs::{Client, FrameId, SignalFrameDescriptor, SignalId};
+use sbs_core::sbs::{Client, SignalFrameDescriptor, SignalId};
 use sbs_uart::sbs_uart::SbsUart;
 
 use crate::view::{AsyncProcess, ChildView, State, TopLevelView, View};
@@ -31,20 +31,8 @@ pub enum ConnectState {
 
 #[derive(Default)]
 pub struct PlotState {
+    #[allow(dead_code)]
     enabled_signals: HashSet<SignalId>,
-}
-
-pub enum Signals {
-    Initial,
-    Loading(AsyncProcess<Result<Vec<SignalFrameDescriptor>, String>>),
-    Loaded(Vec<SignalFrameDescriptor>),
-    Error(String),
-}
-
-pub enum SelectSignalState {
-    Idle,
-    Enabling(AsyncProcess<Result<Vec<SignalFrameDescriptor>, String>>, SignalId),
-    Disabling(AsyncProcess<Result<Vec<SignalFrameDescriptor>, String>>, SignalId),
 }
 
 pub struct MainViewState {
@@ -207,7 +195,7 @@ impl MainView {
     fn view_disconnected(
         &mut self,
         ctx: &egui::Context,
-        frame: &mut eframe::Frame,
+        _frame: &mut eframe::Frame,
     ) -> LinkedList<MainViewAction> {
         egui::CentralPanel::default().show(ctx, |ui| {
             self.connect_view.render(ui).inner
@@ -217,7 +205,7 @@ impl MainView {
     fn view_connecting(
         &self,
         ctx: &egui::Context,
-        frame: &mut eframe::Frame,
+        _frame: &mut eframe::Frame,
     ) {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.centered_and_justified(|ui| ui.spinner());
@@ -269,7 +257,7 @@ impl MainView {
     }
 
     fn render_plot(plot: &mut PlotView, ui: &mut Ui, actions: &mut LinkedList<MainViewAction>) -> Response {
-        let mut ir = plot.render(ui);
+        let ir = plot.render(ui);
 
         for action in ir.inner {
             actions.push_back(match action {

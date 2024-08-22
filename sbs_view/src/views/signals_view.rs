@@ -115,8 +115,6 @@ impl State<SignalsViewAction> for SignalsViewState {
                 println!("{err}");
                 self.enable_state = EnableState::Idle;
             }
-
-            _ => {}
         }
     }
 
@@ -142,13 +140,12 @@ impl State<SignalsViewAction> for SignalsViewState {
                     Err(err) => SignalsViewAction::EnableSignalFailed(err)
                 })
             },
-            EnableState::DisablingSignal(ref mut proc, signal_id) => if proc.is_done() {
+            EnableState::DisablingSignal(ref mut proc, _signal_id) => if proc.is_done() {
                 result.push_back(match proc.get() {
                     Ok(frames) => SignalsViewAction::DisableSignalSuccess(frames),
                     Err(err) => SignalsViewAction::DisableSignalFailed(err),
                 })
             }
-            _ => {}
         }
 
         result
@@ -210,7 +207,7 @@ impl SignalsViewState {
     fn frame_has_enabled_signals(&self, frame_id: FrameId) -> bool {
         self.enabled_signals
             .iter()
-            .any(|((fid, sid), v)| fid.eq(&frame_id) && !v.is_empty())
+            .any(|((fid, _), v)| fid.eq(&frame_id) && !v.is_empty())
     }
 }
 
@@ -224,7 +221,7 @@ impl View<SignalsViewState, SignalsViewAction, MainViewAction> for SignalsView {
     }
 
     fn view(&mut self, ui: &mut Ui) -> InnerResponse<LinkedList<SignalsViewAction>> {
-        let mut result = LinkedList::<SignalsViewAction>::new();
+        let result = LinkedList::<SignalsViewAction>::new();
         match &self.state.signals {
             Signals::Initial | Signals::Loading(_) => {
                 ui.centered_and_justified(|ui| {
@@ -244,12 +241,9 @@ impl View<SignalsViewState, SignalsViewAction, MainViewAction> for SignalsView {
 
 impl SignalsView {
     pub fn new(client: Arc<Mutex<Box<dyn Client + Send>>>, active_plot_id: Arc<AtomicU32>) -> SignalsView {
-        let mut result = SignalsView {
+        SignalsView {
             state: SignalsViewState::new(client, active_plot_id),
-        };
-
-
-        result
+        }
     }
 
     fn signals_tree(

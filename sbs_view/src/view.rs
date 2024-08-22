@@ -1,11 +1,10 @@
-use eframe::{egui, Frame};
 use eframe::egui::{Context, InnerResponse, Ui};
+use eframe::{egui, Frame};
+use pollster::FutureExt;
 use std::collections::LinkedList;
 use std::future::Future;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use pollster::FutureExt;
-use tokio::sync::RwLock;
+use std::sync::Arc;
 use tokio::task::JoinHandle;
 
 pub trait State<A> {
