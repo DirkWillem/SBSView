@@ -50,11 +50,37 @@ impl Display for Value {
     }
 }
 
+impl Into<f64> for Value {
+    fn into(self) -> f64 {
+        match self {
+            Value::Uint8(v) => v as f64,
+            Value::Uint16(v) => v as f64,
+            Value::Uint32(v) => v as f64,
+            Value::Int8(v) => v as f64,
+            Value::Int16(v) => v as f64,
+            Value::Int32(v) => v as f64,
+            Value::Float32(v) => v as f64,
+            Value::SFix { .. } => todo!(),
+            Value::UFix { e, raw, .. } => {
+                let mut approx = raw as f64;
+                if e < 0 {
+                    approx /= (2 << (-e - 1)) as f64
+                } else if e > 0 {
+                    approx *= (2 << (e - 1)) as f64
+                }
+
+                approx
+            }
+        }
+    }
+}
+
 
 #[derive(Clone, Debug)]
 pub struct SignalFrameValue {
-    descriptor: SignalFrameDescriptor,
-    data: Vec<Value>,
+    pub descriptor: SignalFrameDescriptor,
+    pub timestamp: u32,
+    pub data: Vec<Value>,
 }
 
 impl SignalFrameValue {
@@ -63,11 +89,14 @@ impl SignalFrameValue {
 
         SignalFrameValue {
             descriptor,
+            timestamp: 0,
             data,
         }
     }
 
-    pub fn update_from_bytes(&mut self, bytes: &[u8]) -> bool {
+    pub fn update_from_bytes(&mut self, timestamp: u32, bytes: &[u8]) -> bool {
+        self.timestamp = timestamp;
+
         let mut reader = BinaryReader::new(bytes);
 
         for (i, signal) in self.descriptor.signals.iter().enumerate() {
@@ -94,6 +123,11 @@ impl Display for SignalFrameValue {
             .collect::<Vec<_>>()
             .join(", ");
 
-        write!(f, "{}({})", self.descriptor.name, signal_values)
+
+        if signal_values.is_empty() {
+            write!(f, "{}(t={})", self.descriptor.name, self.timestamp)
+        } else {
+            write!(f, "{}(t={}, {})", self.descriptor.name, self.timestamp, signal_values)
+        }
     }
 }

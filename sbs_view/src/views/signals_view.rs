@@ -18,7 +18,7 @@ pub enum SignalsViewAction {
     EnableSignalFailed(String),
 
     DisableSignal(SignalId),
-    DisableSignalSuccess(Vec<SignalFrameDescriptor>),
+    DisableSignalSuccess(Vec<SignalFrameDescriptor>, SignalId),
     DisableSignalFailed(String),
 }
 
@@ -107,7 +107,7 @@ impl State<SignalsViewAction> for SignalsViewState {
                     self.enable_state = EnableState::DisablingSignal(disable_proc, signal_id);
                 }
             }
-            SignalsViewAction::DisableSignalSuccess(new_frames) => {
+            SignalsViewAction::DisableSignalSuccess(new_frames, _) => {
                 self.signals = Signals::Loaded(new_frames);
                 self.enable_state = EnableState::Idle;
             }
@@ -140,9 +140,9 @@ impl State<SignalsViewAction> for SignalsViewState {
                     Err(err) => SignalsViewAction::EnableSignalFailed(err)
                 })
             },
-            EnableState::DisablingSignal(ref mut proc, _signal_id) => if proc.is_done() {
+            EnableState::DisablingSignal(ref mut proc, signal_id) => if proc.is_done() {
                 result.push_back(match proc.get() {
-                    Ok(frames) => SignalsViewAction::DisableSignalSuccess(frames),
+                    Ok(frames) => SignalsViewAction::DisableSignalSuccess(frames, signal_id.clone()),
                     Err(err) => SignalsViewAction::DisableSignalFailed(err),
                 })
             }
@@ -235,6 +235,16 @@ impl View<SignalsViewState, SignalsViewAction, MainViewAction> for SignalsView {
             Signals::Error(err) => {
                 InnerResponse::new(result, ui.label(format!("Failed to load signals: {err}")))
             }
+        }
+    }
+
+    fn action_to_parent_action(&self, action: &SignalsViewAction) -> Option<MainViewAction> {
+        match action {
+            SignalsViewAction::EnableSignal(signal_id) =>
+                Some(MainViewAction::AddSignalToCurrentPlot(signal_id.clone())),
+            SignalsViewAction::DisableSignal(signal_id) =>
+                Some(MainViewAction::RemoveSignalFromCurrentPlot(signal_id.clone())),
+            _ => None,
         }
     }
 }

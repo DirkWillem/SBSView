@@ -1,19 +1,22 @@
 use eframe::egui;
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, LinkedList};
+use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
 use eframe::egui::{Response, Ui};
+use pollster::FutureExt;
 use tokio::sync::Mutex;
 
-use sbs_core::sbs::{Client, SignalFrameDescriptor, SignalId};
-use sbs_uart::sbs_uart::SbsUart;
-
+use crate::signals::window_buffer::WindowBuffer;
 use crate::view::{AsyncProcess, ChildView, State, TopLevelView, View};
 use crate::views::connect_view::{ConnectView, Port};
 use crate::views::plot_view::{PlotView, PlotViewParentAction};
 use crate::views::sidebar_settings_view::SidebarSettingsView;
 use crate::views::signals_view::{SignalsView, SignalsViewAction};
+use sbs_core::sbs::{Client, SignalId};
+use sbs_uart::sbs_uart::SbsUart;
 
 pub enum MainViewAction {
     SetActivePlot(u32),
@@ -21,6 +24,9 @@ pub enum MainViewAction {
     Connect(Port),
     ConnectSuccess(Box<dyn Client + Send>),
     ConnectFailed(String),
+
+    AddSignalToCurrentPlot(SignalId),
+    RemoveSignalFromCurrentPlot(SignalId),
 }
 
 pub enum ConnectState {
@@ -29,10 +35,19 @@ pub enum ConnectState {
     Connected,
 }
 
-#[derive(Default)]
 pub struct PlotState {
     #[allow(dead_code)]
     enabled_signals: HashSet<SignalId>,
+    window_buffer: Rc<RefCell<WindowBuffer>>,
+}
+
+impl PlotState {
+    pub fn new(window_buffer: Rc<RefCell<WindowBuffer>>) -> PlotState {
+        PlotState {
+            enabled_signals: HashSet::new(),
+            window_buffer,
+        }
+    }
 }
 
 pub struct MainViewState {
@@ -49,7 +64,11 @@ impl State<MainViewAction> for MainViewState {
         match action {
             // Connection
             MainViewAction::Connect(port) => self.connect(port),
-            MainViewAction::ConnectSuccess(client) => {
+            MainViewAction::ConnectSuccess(mut client) => {
+                for (_, state) in &mut self.plots {
+                    client.add_callback(state.window_buffer.borrow_mut().callback()).block_on();
+                }
+
                 self.client = Some(Arc::new(Mutex::new(client)));
                 self.connect_state = ConnectState::Connected;
             }
@@ -62,6 +81,15 @@ impl State<MainViewAction> for MainViewState {
             MainViewAction::SetActivePlot(id) => {
                 self.selected_plot_id.store(id, Ordering::SeqCst);
             }
+
+            MainViewAction::AddSignalToCurrentPlot(signal_id) => {
+                let plot_id = self.selected_plot_id.load(Ordering::SeqCst);
+                self.plots.get_mut(&plot_id).unwrap().window_buffer.borrow_mut().add_signal(&signal_id);
+            }
+            MainViewAction::RemoveSignalFromCurrentPlot(signal_id) => {
+                let plot_id = self.selected_plot_id.load(Ordering::SeqCst);
+                self.plots.get_mut(&plot_id).unwrap().window_buffer.borrow_mut().remove_signal(&signal_id);
+            }
         }
     }
 }
@@ -72,12 +100,7 @@ impl MainViewState {
             connect_state: ConnectState::Disconnected,
             client: None,
             selected_plot_id,
-            plots: [
-                (1, Default::default()),
-                (2, Default::default()),
-                (3, Default::default()),
-                (4, Default::default()),
-            ].into(),
+            plots: Default::default(),
 
             signals_view_actions: Default::default(),
         }
@@ -121,10 +144,8 @@ impl MainViewState {
         }
     }
 
-    fn ensure_plot_state_exists(&mut self, plot_id: u32) {
-        if !self.plots.contains_key(&plot_id) {
-            self.plots.insert(plot_id, Default::default());
-        }
+    fn add_plot(&mut self, plot_id: u32, buffer: Rc<RefCell<WindowBuffer>>) {
+        self.plots.insert(plot_id, PlotState::new(buffer));
     }
 }
 
@@ -143,18 +164,22 @@ pub struct MainView {
 impl MainView {
     pub fn new() -> MainView {
         let selected_plot_id = Arc::new(AtomicU32::new(1));
-        MainView {
+        let mut result = MainView {
             state: MainViewState::new(selected_plot_id.clone()),
             connect_view: ConnectView::new(),
             signals_view: None,
             sidebar_settings: SidebarSettingsView::new(),
-            plot_view: vec![
-                PlotView::new(1, selected_plot_id.clone()),
-                PlotView::new(2, selected_plot_id.clone()),
-                PlotView::new(3, selected_plot_id.clone()),
-                PlotView::new(4, selected_plot_id.clone()),
-            ],
+            plot_view: vec![],
+        };
+
+        for i in [1u32, 2u32, 3u32, 4u32] {
+            let window_buf = Rc::new(RefCell::new(WindowBuffer::new()));
+
+            result.plot_view.push(PlotView::new(i, selected_plot_id.clone(), window_buf.clone()));
+            result.state.add_plot(i, window_buf.clone());
         }
+
+        result
     }
 }
 

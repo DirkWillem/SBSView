@@ -1,5 +1,6 @@
 mod view;
 mod views;
+mod signals;
 
 use crate::view::{ChildView, State, UpdateTopLevelView, View};
 use crate::views::main_view::MainView;

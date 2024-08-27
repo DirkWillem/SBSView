@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use tokio::sync::{mpsc, RwLock};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
-use sbs_core::sbs::{Client, SignalFrameDescriptor, FrameId, SignalDescriptor};
+use sbs_core::sbs::{Client, SignalFrameDescriptor, FrameId, SignalDescriptor, SignalFrameCallback};
 use sbs_core::value::SignalFrameValue;
 use crate::error::Error;
 use crate::frame_decoder::RawSignalFrame;
@@ -20,6 +20,8 @@ pub struct SbsUart {
     frame_descriptors: Arc<RwLock<Option<HashMap<FrameId, FrameState>>>>,
     #[allow(dead_code)]
     frame_reader_thread: JoinHandle<()>,
+
+    callbacks: Arc<RwLock<Vec<Box<dyn SignalFrameCallback>>>>,
 }
 
 
@@ -59,6 +61,11 @@ impl Client for SbsUart {
 
         Ok(())
     }
+
+    async fn add_callback(&mut self, cb: Box<dyn SignalFrameCallback>) {
+        let mut cbs = self.callbacks.write().await;
+        (*cbs).push(cb);
+    }
 }
 
 impl SbsUart {
@@ -66,20 +73,26 @@ impl SbsUart {
         let (raw_frame_tx, mut raw_frame_rx): (Sender<RawSignalFrame>, Receiver<RawSignalFrame>) = mpsc::channel(32);
 
         let frame_descriptors = Arc::new(RwLock::new(None));
+        let callbacks = Arc::new(RwLock::new(Vec::<Box<dyn SignalFrameCallback>>::new()));
 
         SbsUart {
             serial_worker: SerialWorker::new(raw_frame_tx),
             frame_descriptors: Arc::clone(&frame_descriptors),
+            callbacks: callbacks.clone(),
             frame_reader_thread: tokio::spawn(async move {
-                let descriptors_rwl = Arc::clone(&frame_descriptors);
+                let descriptors_rwl = frame_descriptors.clone();
+                let callbacks = callbacks.clone();
                 while let Some(frame) = raw_frame_rx.recv().await {
                     let frame_id = FrameId(frame.frame_id);
 
                     let mut descriptors_opt = descriptors_rwl.write().await;
                     if let Some(ref mut descriptors) = &mut *descriptors_opt {
                         if let Some(frame_state) = descriptors.get_mut(&frame_id) {
-                            frame_state.latest_value.update_from_bytes(frame.data.as_slice());
-                            println!("{}", frame_state.latest_value);
+                            frame_state.latest_value.update_from_bytes(frame.timestamp, frame.data.as_slice());
+
+                            for cb in callbacks.read().await.iter() {
+                                (*cb)(frame_id, &frame_state.latest_value);
+                            }
                         }
                     }
                 }

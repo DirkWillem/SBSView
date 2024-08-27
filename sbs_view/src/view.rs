@@ -43,15 +43,20 @@ where
     T: View<S, A, PA>,
 {
     fn render(&mut self, ui: &mut Ui) -> InnerResponse<LinkedList<PA>> {
+        let mut parent_actions: LinkedList<PA> = Default::default();
+
         // Handle effects
         let effect_actions = self.state().poll_effects();
         for action in effect_actions {
+            if let Some(pa) = self.action_to_parent_action(&action) {
+                parent_actions.push_back(pa);
+            }
+
             self.state().apply(action);
         }
 
         // Handle UI
         let child_response = self.view(ui);
-        let mut parent_actions: LinkedList<PA> = Default::default();
 
         for action in child_response.inner {
             if let Some(pa) = self.action_to_parent_action(&action) {

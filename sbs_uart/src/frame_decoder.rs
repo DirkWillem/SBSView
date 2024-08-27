@@ -63,6 +63,7 @@ enum DecodeGetFrameInfoState {
 #[derive(Clone, Debug)]
 enum DecodeDataFrameState {
     FrameId,
+    Timestamp,
     DataLen,
     Data(u32),
 }
@@ -70,6 +71,7 @@ enum DecodeDataFrameState {
 #[derive(Clone, Debug, Default)]
 pub struct RawSignalFrame {
     pub frame_id: u32,
+    pub timestamp: u32,
     pub data: Vec<u8>,
 }
 
@@ -295,6 +297,11 @@ impl Decoder {
             DecodeDataFrameState::FrameId => self.consume_u32_le()
                 .map(|fid| {
                     self.data_frame.frame_id = fid;
+                    DecodeDataFrameState::Timestamp.into()
+                }),
+            DecodeDataFrameState::Timestamp => self.consume_u32_le()
+                .map(|ts|{
+                    self.data_frame.timestamp = ts;
                     DecodeDataFrameState::DataLen.into()
                 }),
             DecodeDataFrameState::DataLen => self.consume_u32_le()
