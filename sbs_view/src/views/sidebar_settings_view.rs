@@ -1,8 +1,11 @@
 use std::collections::LinkedList;
 use eframe::egui::{ComboBox, InnerResponse, Ui};
 use crate::view::{State, View};
+use crate::views::main_view::PlotsLayout;
 
-pub enum SidebarSettingsAction {}
+pub enum SidebarSettingsAction {
+    SetLayout(PlotsLayout)
+}
 
 pub struct SidebarSettingsState {}
 

@@ -1,11 +1,12 @@
 use eframe::egui;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, LinkedList};
+use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
-use eframe::egui::{Response, Ui};
+use eframe::egui::{ComboBox, Response, Ui};
 use pollster::FutureExt;
 use tokio::sync::Mutex;
 
@@ -18,6 +19,25 @@ use crate::views::signals_view::{SignalsView, SignalsViewAction};
 use sbs_core::sbs::{Client, SignalId};
 use sbs_uart::sbs_uart::SbsUart;
 
+#[derive(PartialEq)]
+pub enum PlotsLayout {
+    Single,
+    TwoHorizontal,
+    TwoVertical,
+    TwoByTwoGrid,
+}
+
+impl Display for PlotsLayout {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PlotsLayout::Single => write!(f, "Single"),
+            PlotsLayout::TwoHorizontal => write!(f, "2 Split Horizontal"),
+            PlotsLayout::TwoVertical => write!(f, "2 Split Vertical"),
+            PlotsLayout::TwoByTwoGrid => write!(f, "2x2 Grid"),
+        }
+    }
+}
+
 pub enum MainViewAction {
     SetActivePlot(u32),
 
@@ -27,15 +47,19 @@ pub enum MainViewAction {
 
     AddSignalToCurrentPlot(SignalId),
     RemoveSignalFromCurrentPlot(SignalId),
+
+    SetPlotWindow(u32, f32),
+
+    SetLayout(PlotsLayout),
 }
 
-pub enum ConnectState {
+enum ConnectState {
     Disconnected,
     Connecting(AsyncProcess<Result<Box<SbsUart>, String>>),
     Connected,
 }
 
-pub struct PlotState {
+struct PlotState {
     #[allow(dead_code)]
     enabled_signals: HashSet<SignalId>,
     window_buffer: Rc<RefCell<WindowBuffer>>,
@@ -55,6 +79,7 @@ pub struct MainViewState {
     client: Option<Arc<Mutex<Box<dyn Client + Send>>>>,
     selected_plot_id: Arc<AtomicU32>,
     plots: HashMap<u32, PlotState>,
+    view_layout: PlotsLayout,
 
     signals_view_actions: LinkedList<SignalsViewAction>,
 }
@@ -90,6 +115,16 @@ impl State<MainViewAction> for MainViewState {
                 let plot_id = self.selected_plot_id.load(Ordering::SeqCst);
                 self.plots.get_mut(&plot_id).unwrap().window_buffer.borrow_mut().remove_signal(&signal_id);
             }
+
+            // Plot settings
+            MainViewAction::SetPlotWindow(id, window) => {
+                self.plots.get_mut(&id).unwrap().window_buffer.borrow_mut().set_window(window);
+            }
+
+            // Layout
+            MainViewAction::SetLayout(layout) => {
+                self.view_layout = layout;
+            }
         }
     }
 }
@@ -101,6 +136,7 @@ impl MainViewState {
             client: None,
             selected_plot_id,
             plots: Default::default(),
+            view_layout: PlotsLayout::Single,
 
             signals_view_actions: Default::default(),
         }
@@ -181,6 +217,24 @@ impl MainView {
 
         result
     }
+
+    fn ensure_views_exist(&mut self) {
+        match self.state.view_layout {
+            PlotsLayout::Single => self.ensure_n_views_exist(1),
+            PlotsLayout::TwoHorizontal | PlotsLayout::TwoVertical => self.ensure_n_views_exist(2),
+            PlotsLayout::TwoByTwoGrid => self.ensure_n_views_exist(4),
+        }
+    }
+
+    fn ensure_n_views_exist(&mut self, n: usize) {
+        for i in 1..=n {
+            if i > self.plot_view.len() {
+                let window_buf = Rc::new(RefCell::new(WindowBuffer::new()));
+                self.plot_view.push(PlotView::new(i as u32, self.state.selected_plot_id.clone(), window_buf.clone()));
+                self.state.add_plot(i as u32, window_buf.clone());
+            }
+        }
+    }
 }
 
 impl TopLevelView<MainViewState, MainViewAction> for MainView {
@@ -249,7 +303,19 @@ impl MainView {
         let mut signals_view_actions = egui::SidePanel::left("signals")
             .exact_width(240.0)
             .show(ctx, |ui| {
-                self.sidebar_settings.render(ui);
+                ComboBox::from_id_source("Layout").selected_text(self.state.view_layout.to_string()).show_ui(ui, |ui| {
+                    for layout in [
+                        PlotsLayout::Single,
+                        PlotsLayout::TwoHorizontal,
+                        PlotsLayout::TwoVertical,
+                        PlotsLayout::TwoByTwoGrid,
+                    ] {
+                        if ui.selectable_label(self.state.view_layout == layout, format!("{layout}")).clicked() {
+                            result.push_back(MainViewAction::SetLayout(layout));
+                        }
+                    }
+                });
+
                 ui.separator();
                 self.signals_view.as_mut().unwrap().render(ui)
             }).inner;
@@ -257,24 +323,33 @@ impl MainView {
 
         let size = ctx.available_rect();
 
+
+        self.ensure_views_exist();
+        let (nx, ny): (usize, usize) = match self.state.view_layout {
+            PlotsLayout::Single => (1, 1),
+            PlotsLayout::TwoHorizontal => (2, 1),
+            PlotsLayout::TwoVertical => (1, 2),
+            PlotsLayout::TwoByTwoGrid => (2, 2),
+        };
+
+
         egui::CentralPanel::default()
             .show(ctx, |ui| {
                 egui::Grid::new("plots").num_columns(2).spacing([8.0, 8.0]).show(ui, |ui| {
-                    ui.add_sized([size.width() / 2.0 - 12.0, size.height() / 2.0 - 12.0], |ui: &mut Ui| {
-                        Self::render_plot(&mut self.plot_view[0], ui, &mut result)
-                    });
-                    ui.add_sized([size.width() / 2.0 - 12.0, size.height() / 2.0 - 12.0], |ui: &mut Ui| {
-                        Self::render_plot(&mut self.plot_view[1], ui, &mut result)
-                    });
+                    let size_x = size.width() / (nx as f32) - (8.0 + 4.0 * (nx as f32));
+                    let size_y = size.height() / (ny as f32) - (8.0 + 4.0 * (ny as f32));
 
-                    ui.end_row();
+                    for iy in 0..ny {
+                        for ix in 0..nx {
+                            let i = iy * nx + ix;
 
-                    ui.add_sized([size.width() / 2.0 - 12.0, size.height() / 2.0 - 12.0], |ui: &mut Ui| {
-                        Self::render_plot(&mut self.plot_view[2], ui, &mut result)
-                    });
-                    ui.add_sized([size.width() / 2.0 - 12.0, size.height() / 2.0 - 12.0], |ui: &mut Ui| {
-                        Self::render_plot(&mut self.plot_view[3], ui, &mut result)
-                    });
+                            ui.add_sized([size_x, size_y], |ui: &mut Ui| {
+                                Self::render_plot(&mut self.plot_view[i], ui, &mut result)
+                            });
+                        }
+
+                        ui.end_row();
+                    }
                 });
             });
 
@@ -286,7 +361,8 @@ impl MainView {
 
         for action in ir.inner {
             actions.push_back(match action {
-                PlotViewParentAction::SetActivePlot(id) => MainViewAction::SetActivePlot(id)
+                PlotViewParentAction::SetActivePlot(id) => MainViewAction::SetActivePlot(id),
+                PlotViewParentAction::SetWindow(window) => MainViewAction::SetPlotWindow(plot.id(), window),
             });
         }
 

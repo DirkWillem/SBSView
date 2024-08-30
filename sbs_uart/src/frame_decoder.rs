@@ -90,6 +90,7 @@ enum PayloadType {
     EnableFrame,
     DisableFrame,
     DataFrame,
+    NullFrame,
 }
 
 #[derive(Clone, Debug)]
@@ -206,6 +207,7 @@ impl Decoder {
                             clear_read = true;
                             DecoderState::StartWord
                         }
+                        b'(' => DecoderState::PayloadEndChar(PayloadType::NullFrame, b')'),
                     }),
                 DecoderState::DataFrame(inner) =>
                     self.decode_data_frame(inner),
@@ -260,6 +262,7 @@ impl Decoder {
                                 PayloadType::EnableFrame => DecodeResult::CmdFrame(DecodedFrame::EnableFrame),
                                 PayloadType::DisableFrame => DecodeResult::CmdFrame(DecodedFrame::DisableFrame),
                                 PayloadType::DataFrame => DecodeResult::SignalFrame(self.data_frame.clone()),
+                                PayloadType::NullFrame => result.clone(),
                             };
 
                             DecoderState::StartWord
@@ -300,7 +303,7 @@ impl Decoder {
                     DecodeDataFrameState::Timestamp.into()
                 }),
             DecodeDataFrameState::Timestamp => self.consume_u32_le()
-                .map(|ts|{
+                .map(|ts| {
                     self.data_frame.timestamp = ts;
                     DecodeDataFrameState::DataLen.into()
                 }),

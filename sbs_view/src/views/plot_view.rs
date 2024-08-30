@@ -2,7 +2,7 @@ use crate::signals::window_buffer::{Snapshot, WindowBuffer};
 use crate::view::{State, View};
 use eframe::egui;
 use eframe::egui::{DragValue, InnerResponse, Ui};
-use egui_plot::{Line, Plot, PlotPoints};
+use egui_plot::{Line, Plot, PlotBounds, PlotPoints};
 use std::cell::RefCell;
 use std::collections::LinkedList;
 use std::rc::Rc;
@@ -15,10 +15,12 @@ pub enum PlotViewAction {
     MakeActive,
     TakeSnapshot,
     UpdateSnapshot(Snapshot),
+    SetWindow(f32),
 }
 
 pub enum PlotViewParentAction {
-    SetActivePlot(u32)
+    SetActivePlot(u32),
+    SetWindow(f32),
 }
 
 pub enum SnapshotState {
@@ -28,6 +30,7 @@ pub enum SnapshotState {
 
 pub struct PlotViewState {
     show_settings: bool,
+    stored_window: f32,
     window: f32,
     id: u32,
     active_id: Arc<AtomicU32>,
@@ -49,14 +52,17 @@ impl State<PlotViewAction> for PlotViewState {
             PlotViewAction::UpdateSnapshot(snapshot) => {
                 self.buf_snapshot = snapshot;
                 self.last_snapshot_at = SystemTime::now();
-                println!("{:?}", self.buf_snapshot);
                 self.snapshot_state = SnapshotState::Idle;
+            }
+
+            PlotViewAction::SetWindow(new_window) => {
+                self.stored_window = new_window;
             }
         }
     }
 
     fn poll_effects(&mut self) -> LinkedList<PlotViewAction> {
-        match self.snapshot_state {
+        let mut result: LinkedList<PlotViewAction> = match self.snapshot_state {
             SnapshotState::Idle =>
                 if SystemTime::now().duration_since(self.last_snapshot_at).unwrap().as_millis() > 50 {
                     [PlotViewAction::TakeSnapshot].into()
@@ -69,7 +75,13 @@ impl State<PlotViewAction> for PlotViewState {
                 } else {
                     Default::default()
                 }
+        };
+
+        if (self.window - self.stored_window).abs() > 1e-6 {
+            result.push_back(PlotViewAction::SetWindow(self.window));
         }
+
+        result
     }
 }
 
@@ -77,6 +89,7 @@ impl PlotViewState {
     fn new(id: u32, active_id: Arc<AtomicU32>, buf: Rc<RefCell<WindowBuffer>>) -> PlotViewState {
         PlotViewState {
             show_settings: false,
+            stored_window: 10.0,
             window: 10.0,
             id,
             active_id,
@@ -146,6 +159,7 @@ impl View<PlotViewState, PlotViewAction, PlotViewParentAction> for PlotView {
     fn action_to_parent_action(&self, action: &PlotViewAction) -> Option<PlotViewParentAction> {
         match action {
             PlotViewAction::MakeActive => Some(PlotViewParentAction::SetActivePlot(self.state.id)),
+            PlotViewAction::SetWindow(window) => Some(PlotViewParentAction::SetWindow(*window)),
             _ => None,
         }
     }
@@ -158,6 +172,10 @@ impl PlotView {
             plot_id: format!("plot_{id}"),
             settings_id: format!("plot_settings_{id}"),
         }
+    }
+
+    pub fn id(&self) -> u32 {
+        self.state.id
     }
 }
 

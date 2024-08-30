@@ -28,6 +28,12 @@ pub struct WindowBuffer {
 }
 
 
+impl Drop for WindowBuffer {
+    fn drop(&mut self) {
+        self.cmd_tx.send(Cmd::Quit).expect("Failed to send Cmd");
+    }
+}
+
 impl WindowBuffer {
     pub fn new() -> WindowBuffer {
         let (cmd_tx, cmd_rx) = mpsc::channel();
@@ -35,15 +41,16 @@ impl WindowBuffer {
 
         WindowBuffer {
             signals_buffer: Arc::new(RwLock::new(HashMap::new())),
-            // snapshot_thread: None,
-            // window_ms: Arc::new(AtomicU32::new(10_000)),
             rw_thread: thread::spawn(move || {
                 let mut window: u32 = 10_000;
                 let mut buf = Snapshot::default();
 
                 while let Ok(cmd) = cmd_rx.recv() {
                     match cmd {
-                        Cmd::SetWindow(new_window) => window = (new_window * 10.000) as u32,
+                        Cmd::SetWindow(new_window) => {
+                            window = (new_window * 1000.0) as u32;
+                            println!("{window}");
+                        },
                         Cmd::AddSignal(signal_id) =>
                             if !buf.contains_key(&signal_id) {
                                 buf.insert(signal_id, VecDeque::new());
@@ -98,6 +105,10 @@ impl WindowBuffer {
 
     pub fn remove_signal(&mut self, signal_id: &SignalId) {
         self.cmd_tx.send(Cmd::RemoveSignal(signal_id.clone())).expect("Failed to send Cmd");
+    }
+
+    pub fn set_window(&mut self, window: f32) {
+        self.cmd_tx.send(Cmd::SetWindow(window)).expect("Failed to send Cmd");
     }
 
     pub fn request_snapshot(&mut self) {
